@@ -5,13 +5,14 @@ import okhttp3.Request
 import java.io.IOException
 import java.util.Base64
 
-const val GITHUB_TOKEN = "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" // Replace with your GitHub token
+// Retrieve the GitHub token from environment variables
+val GITHUB_DEVELOPER_TOKEN = System.getenv("GITHUB_DEVELOPER_TOKEN") ?: error("GitHub token not found. Set the GITHUB_DEVELOPER_TOKEN environment variable.")
 
 // Data classes for JSON serialization
 @Serializable
 data class Repo(
     val full_name: String,
-    val default_branch: String // Add default_branch here
+    val default_branch: String
 )
 
 @Serializable
@@ -35,7 +36,7 @@ val base64Regex = Regex("^[A-Za-z0-9+/=]+\$")
 fun searchJavaRepositories(): List<Repo> {
     val request = Request.Builder()
         .url("https://api.github.com/search/repositories?q=language:Java&sort=stars&order=desc&per_page=5")
-        .header("Authorization", "Bearer $GITHUB_TOKEN")
+        .header("Authorization", "Bearer $GITHUB_DEVELOPER_TOKEN")
         .build()
 
     client.newCall(request).execute().use { response ->
@@ -50,7 +51,7 @@ fun searchJavaRepositories(): List<Repo> {
 fun getLatestCommitSHA(repoName: String, defaultBranch: String): String {
     val request = Request.Builder()
         .url("https://api.github.com/repos/$repoName/branches/$defaultBranch")
-        .header("Authorization", "Bearer $GITHUB_TOKEN")
+        .header("Authorization", "Bearer $GITHUB_DEVELOPER_TOKEN")
         .build()
 
     client.newCall(request).execute().use { response ->
@@ -66,7 +67,7 @@ fun getLatestCommitSHA(repoName: String, defaultBranch: String): String {
 fun getJavaFiles(repoName: String, commitSHA: String): List<TreeNode> {
     val request = Request.Builder()
         .url("https://api.github.com/repos/$repoName/git/trees/$commitSHA?recursive=1")
-        .header("Authorization", "Bearer $GITHUB_TOKEN")
+        .header("Authorization", "Bearer $GITHUB_DEVELOPER_TOKEN")
         .build()
 
     client.newCall(request).execute().use { response ->
@@ -81,7 +82,7 @@ fun getJavaFiles(repoName: String, commitSHA: String): List<TreeNode> {
 fun getClassNamesFromJavaFile(repoName: String, fileSHA: String): List<String> {
     val request = Request.Builder()
         .url("https://api.github.com/repos/$repoName/git/blobs/$fileSHA")
-        .header("Authorization", "Bearer $GITHUB_TOKEN")
+        .header("Authorization", "Bearer $GITHUB_DEVELOPER_TOKEN")
         .build()
 
     client.newCall(request).execute().use { response ->
@@ -117,10 +118,9 @@ fun calculateWordPopularity(classNames: List<String>): Map<String, Int> {
     val wordFrequency = mutableMapOf<String, Int>()
 
     for (className in classNames) {
-        // Split the class name into words (assuming CamelCase convention)
         val words = className.split("(?<!^)(?=[A-Z])".toRegex())
         for (word in words) {
-            wordFrequency[word.toLowerCase()] = wordFrequency.getOrDefault(word.toLowerCase(), 0) + 1
+            wordFrequency[word.lowercase()] = wordFrequency.getOrDefault(word.lowercase(), 0) + 1
         }
     }
 
@@ -132,24 +132,20 @@ fun main() {
     for (repo in repos) {
         println("Repository: ${repo.full_name}")
 
-        // Use the repository's default branch
         val commitSHA = getLatestCommitSHA(repo.full_name, repo.default_branch)
         val javaFiles = getJavaFiles(repo.full_name, commitSHA)
 
         for (file in javaFiles) {
             println("Java File: ${file.path}")
 
-            // Retrieve and store class names
             val classNames = getClassNamesFromJavaFile(repo.full_name, file.sha)
             classNamesList.addAll(classNames)
 
-            // Stop if we reach 10,000 class names
             if (classNamesList.size >= 2000) break
         }
         if (classNamesList.size >= 2000) break
     }
 
-    // Calculate and print word popularity
     val wordPopularity = calculateWordPopularity(classNamesList.take(10000))
     println("Word Popularity Score (Top 20):")
     wordPopularity.entries.sortedByDescending { it.value }.take(20).forEach { (word, score) ->
